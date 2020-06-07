@@ -1,0 +1,7 @@
+version: '3.4'
+
+services:
+ python-api:
+    image: "wildlife"
+    ports:
+      - 80:80
