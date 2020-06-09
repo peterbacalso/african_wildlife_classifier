@@ -1,5 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from io import BytesIO
 from fastai.vision import (
@@ -9,29 +11,26 @@ from fastai.vision import (
 )
 import torch
 import aiohttp
+import asyncio
 
-app = FastAPI()
-
+path = Path(__file__).parent
 defaults.device = torch.device('cpu')
 learner = load_learner(".")
 
+app = FastAPI()
+app.mount("/static", StaticFiles(directory=path/"static"), name="static")
+
 def predict_image(data, is_file=True):
     img = open_image(data if is_file else BytesIO(data))
-    _,_,losses = learner.predict(img)
-    return {
-        "predictions": sorted(
-            zip(learner.data.classes, map(float, losses)),
-            key=lambda p: p[1],
-            reverse=True
-        )
-    }
+    prediction = learner.predict(img)[0]
+    return {'result': str(prediction)}
 
 async def get_bytes_from_url(url):
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
             return await response.read()
 
-@app.post("/upload")
+@app.post("/analyze")
 async def create_upload_file(file: UploadFile = File(...)):
     return predict_image(file.file)
 
@@ -40,21 +39,10 @@ async def classify_url(*, url: str = Form(...)):
     bytes = await get_bytes_from_url(url)
     return predict_image(data=bytes, is_file=False)
 
-@app.get("/")
-async def form():
-    html_content = """
-        <form action="/upload" method="post" enctype="multipart/form-data">
-            Select image to upload:
-            <input type="file" name="file">
-            <input type="submit" value="Upload Image">
-        </form>
-        Or submit a URL:
-        <form action="/classify-url" method="post">
-            <input type="url" name="url">
-            <input type="submit" value="Fetch and analyze image">
-        </form>
-    """
-    return HTMLResponse(content=html_content, status_code=200)
+@app.get('/')
+async def homepage():
+    html_file = path / 'view' / 'index.html'
+    return HTMLResponse(html_file.open().read())
 
 
 
